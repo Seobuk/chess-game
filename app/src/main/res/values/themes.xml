@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default theme (forest) bg, so the window matches the first frame; values-night holds the dark one. -->
+    <color name="window_background">#FFF0F7F1</color>
+
+    <style name="Theme.ChessMaster" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:colorBackground">@color/window_background</item>
+    </style>
+</resources>

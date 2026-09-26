@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crowned pawn in flat off-white, inside the 66dp adaptive-icon safe zone. Also the monochrome layer. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.94" android:scaleY="0.94" android:pivotX="54" android:pivotY="54">
+        <path
+            android:fillColor="#FFF4F8F5"
+            android:pathData="M43,37 L41,26 L48,31 L54,22 L60,31 L67,26 L65,37 Z M54,45m-8.5,0a8.5,8.5 0,1 1,17 0a8.5,8.5 0,1 1,-17 0 M47,53 L61,53 Q63,53 63,55 Q63,57 61,57 L47,57 Q45,57 45,55 Q45,53 47,53 Z M48,57 C48,64 44,70 40,74 L68,74 C64,70 60,64 60,57 Z M39.5,74 L68.5,74 Q72,74 72,77.5 Q72,81 68.5,81 L39.5,81 Q36,81 36,77.5 Q36,74 39.5,74 Z" />
+    </group>
+</vector>
