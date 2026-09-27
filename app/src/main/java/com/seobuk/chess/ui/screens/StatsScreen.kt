@@ -18,16 +18,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +56,9 @@ import com.seobuk.chess.ai.MoveQuality
 import com.seobuk.chess.ui.components.AppCard
 import com.seobuk.chess.ui.components.DeltaPill
 import com.seobuk.chess.ui.components.HeroNumber
+import com.seobuk.chess.ui.components.IconCircle
 import com.seobuk.chess.ui.components.LevelAvatar
+import com.seobuk.chess.ui.components.ListRow
 import com.seobuk.chess.ui.components.PillTag
 import com.seobuk.chess.ui.components.QualityChip
 import com.seobuk.chess.ui.components.ScreenHeader
@@ -60,6 +69,8 @@ import com.seobuk.chess.ui.theme.AppTheme
 import com.seobuk.chess.ui.theme.LocalAppColors
 import com.seobuk.chess.ui.theme.Tones
 import com.seobuk.chess.ui.theme.tabular
+import com.seobuk.chess.ui.update.UpdateCheck
+import kotlinx.coroutines.launch
 
 data class StatsUi(
     val rating: Int,
@@ -76,8 +87,12 @@ fun StatsScreen(
     themes: List<AppTheme>,
     selectedThemeId: String,
     onSelectTheme: (id: String) -> Unit,
+    soundEnabled: Boolean,
+    onSoundEnabled: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    versionName: String = "",
+    onCheckUpdate: suspend () -> UpdateCheck = { UpdateCheck.UP_TO_DATE },
 ) {
     val total = remember(stats.levelRecords) {
         stats.levelRecords.values.fold(LevelRecord()) { a, r -> LevelRecord(a.wins + r.wins, a.draws + r.draws, a.losses + r.losses) }
@@ -93,6 +108,8 @@ fun StatsScreen(
             LevelRecords(stats.levelRecords)
             Qualities(stats.qualityTotals, stats.hintsUsed)
             ThemePicker(themes, selectedThemeId, onSelectTheme)
+            SoundSetting(soundEnabled, onSoundEnabled)
+            UpdateRow(versionName, onCheckUpdate)
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -259,6 +276,50 @@ private fun ThemePicker(themes: List<AppTheme>, selectedId: String, onSelect: (S
         }
     }
 }
+
+/** The whole row toggles, and TalkBack reads it as one switch. */
+@Composable
+private fun SoundSetting(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    val c = LocalAppColors.current
+    AppCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
+        Row(
+            Modifier.fillMaxWidth().toggleable(enabled, role = Role.Switch, onValueChange = onChange).padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("효과음", style = MaterialTheme.typography.titleMedium)
+                Text("수를 두거나 대국이 끝날 때 소리로 알려 줘요.", style = MaterialTheme.typography.bodySmall, color = c.muted)
+            }
+            Switch(enabled, onCheckedChange = null)
+        }
+    }
+}
+
+/** "업데이트 확인": a forced check whose outcome replaces the version line; with an update the caller goes Home. */
+@Composable
+private fun UpdateRow(versionName: String, check: suspend () -> UpdateCheck) {
+    var note by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    AppCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(6.dp)) {
+        ListRow(
+            "업데이트 확인",
+            onClick = {
+                if (note != CHECKING) scope.launch {
+                    note = CHECKING
+                    note = when (check()) {
+                        UpdateCheck.HAS_UPDATE -> null
+                        UpdateCheck.UP_TO_DATE -> "최신 버전이에요"
+                        UpdateCheck.ERROR -> "확인하지 못했어요. 나중에 다시 시도해 주세요."
+                    }
+                }
+            },
+            subtitle = note ?: "현재 v$versionName",
+            leading = { IconCircle(Icons.Outlined.SystemUpdate) },
+        )
+    }
+}
+
+private const val CHECKING = "확인하는 중이에요"
 
 /** A 2x2 board-square preview with the theme's primary as a dot; the selected swatch gets a primary ring. */
 @Composable

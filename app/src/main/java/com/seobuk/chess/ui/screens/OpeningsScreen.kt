@@ -76,6 +76,9 @@ import com.seobuk.chess.ui.components.SectionHeader
 import com.seobuk.chess.ui.components.bottomInset
 import com.seobuk.chess.ui.components.figurine
 import com.seobuk.chess.ui.components.screenInsets
+import com.seobuk.chess.ui.sound.LocalSfx
+import com.seobuk.chess.ui.sound.SfxEvent
+import com.seobuk.chess.ui.sound.sfxFor
 import com.seobuk.chess.ui.theme.LocalAppColors
 import com.seobuk.chess.ui.theme.LocalReducedMotion
 import com.seobuk.chess.ui.theme.tabular
@@ -164,6 +167,14 @@ fun OpeningDetailScreen(
     }
     val position = line.positions[ply]
     val next = line.moves.getOrNull(ply)
+    // One step forward sounds like the move it is; any other change (back, jump, restart) is a plain move.
+    val sfx = LocalSfx.current
+    var heardPly by remember { mutableIntStateOf(ply) }
+    LaunchedEffect(ply) {
+        if (ply == heardPly + 1) sfx.play(sfxFor(line.positions[ply - 1], line.moves[ply - 1], position))
+        else if (ply != heardPly) sfx.play(SfxEvent.MOVE)
+        heardPly = ply
+    }
 
     Column(modifier.fillMaxSize().screenInsets()) {
         ScreenHeader(opening.nameKo.substringBefore(" ("), onBack, subtitle = "${opening.nameEn} · ${opening.eco}") {

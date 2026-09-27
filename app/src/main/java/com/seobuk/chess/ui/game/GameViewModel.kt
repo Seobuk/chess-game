@@ -23,6 +23,8 @@ import com.seobuk.chess.learn.Opening
 import com.seobuk.chess.learn.OpeningBook
 import com.seobuk.chess.ui.components.figurine
 import com.seobuk.chess.ui.screens.SideChoice
+import com.seobuk.chess.ui.sound.SfxEvent
+import com.seobuk.chess.ui.sound.sfxFor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -30,6 +32,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -118,6 +123,10 @@ class GameViewModel(
     var ui by mutableStateOf(initialUi())
         private set
 
+    private val _sounds = MutableSharedFlow<SfxEvent>(extraBufferCapacity = 4)
+    /** One-shot sound cues for moves actually played, illegal taps and the result. Nothing is emitted while a game is rebuilt. */
+    val sounds: SharedFlow<SfxEvent> = _sounds.asSharedFlow()
+
     private lateinit var game: Game
     private lateinit var ai: AiPlayer
     private val aiLock = Mutex() // AiPlayer isn't thread-safe; a cancelled search may still be unwinding
@@ -194,6 +203,8 @@ class GameViewModel(
         ui = if (piece != null && piece.side == u.playerSide && sq != sel) {
             u.copy(selected = sq, targets = game.position.legalMoves().filter { it.from == sq }.map { it.to }.toSet())
         } else {
+            // an opponent piece the selected piece cannot take; tapping empty space is just a deselect
+            if (sel != null && piece != null && sq != sel) _sounds.tryEmit(SfxEvent.ILLEGAL)
             u.copy(selected = null, targets = emptySet())
         }
     }
@@ -269,6 +280,7 @@ class GameViewModel(
         val before = game.position.copy()
         val playedBefore = uciMoves()
         if (!game.play(move)) return
+        _sounds.tryEmit(sfxFor(before, move, game.position))
         hintJob?.cancel()
         evalJob?.cancel()
         val ply = game.moves.size - 1
@@ -311,6 +323,7 @@ class GameViewModel(
         val san = before.san(m)
         val text = runCatching { Coach.describeMove(before, m) }.getOrDefault("")
         game.play(m)
+        _sounds.tryEmit(sfxFor(before, m, game.position))
         gen++
         val badge = ui.badge?.takeIf { it.first != m.to }
         ui = refreshed(ui).copy(aiThinking = false, aiLine = AiLine(figurine(san), text), badge = badge)
@@ -371,6 +384,11 @@ class GameViewModel(
             coach = review?.copy(text = "${review.text}\n$line") ?: CoachLine("코치", line),
             result = GameResult(outcome, reason, if (losses.isEmpty()) null else Coach.accuracy(losses), counts, before, after, rated),
         )
+        val g = gen
+        viewModelScope.launch {
+            if (!resigned) delay(600) // let the final move's own cue finish first
+            if (g == gen) _sounds.tryEmit(when (outcome) { Outcome.WIN -> SfxEvent.WIN; Outcome.DRAW -> SfxEvent.DRAW; Outcome.LOSS -> SfxEvent.LOSS })
+        }
     }
 
     // ---- helpers ----

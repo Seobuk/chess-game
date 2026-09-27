@@ -1,5 +1,12 @@
 package com.seobuk.chess.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,15 +25,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.seobuk.chess.ai.AiLevel
+import com.seobuk.chess.ai.Ko
 import com.seobuk.chess.learn.StrategyTopic
 import com.seobuk.chess.ui.board.ChessBoard
 import com.seobuk.chess.ui.components.AppCard
@@ -38,7 +51,9 @@ import com.seobuk.chess.ui.components.PillTag
 import com.seobuk.chess.ui.components.PrimaryButton
 import com.seobuk.chess.ui.components.SectionHeader
 import com.seobuk.chess.ui.theme.LocalAppColors
+import com.seobuk.chess.ui.theme.LocalReducedMotion
 import com.seobuk.chess.ui.theme.tabular
+import com.seobuk.chess.ui.update.UpdateState
 
 fun ratingTitle(rating: Int): String = when {
     rating < 600 -> "입문자"
@@ -49,7 +64,10 @@ fun ratingTitle(rating: Int): String = when {
     else -> "마스터 후보"
 }
 
-/** [tip]: a strategy topic whose example position is shown as a live mini board; tapping it opens the topic. */
+/**
+ * [tip]: a strategy topic whose example position is shown as a live mini board; tapping it opens the topic.
+ * [update]: the self-update card above the list, hidden while [UpdateState.Idle].
+ */
 @Composable
 fun HomeScreen(
     rating: Int,
@@ -61,6 +79,9 @@ fun HomeScreen(
     onStrategy: () -> Unit,
     onStats: () -> Unit,
     modifier: Modifier = Modifier,
+    update: UpdateState = UpdateState.Idle,
+    onUpdate: () -> Unit = {},
+    onUpdateLater: () -> Unit = {},
 ) {
     Column(
         modifier
@@ -74,6 +95,17 @@ fun HomeScreen(
         HeroCard(rating, recommendedLevel, onPlay)
         TipCard(tip, onTip)
         Column {
+            // Inside this Column, not the spaced one above: a hidden AnimatedVisibility would still take a 16dp gap.
+            val reduced = LocalReducedMotion.current
+            AnimatedVisibility(
+                update !is UpdateState.Idle,
+                enter = if (reduced) EnterTransition.None else fadeIn() + expandVertically(),
+                exit = if (reduced) ExitTransition.None else fadeOut() + shrinkVertically(),
+            ) {
+                var shown by remember { mutableStateOf(update) }
+                if (update !is UpdateState.Idle) shown = update // keep the last content while animating out
+                UpdateCard(shown, onUpdate, onUpdateLater, Modifier.padding(bottom = 4.dp))
+            }
             SectionHeader("배우고 돌아보기")
             AppCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(6.dp)) {
                 ListRow("오프닝 배우기", onOpenings, subtitle = "유명한 첫 수를 한 수씩 배워요", leading = { IconCircle(Icons.AutoMirrored.Outlined.MenuBook) })
@@ -124,6 +156,42 @@ private fun TipCard(tip: StrategyTopic, onClick: () -> Unit) {
                 Spacer(Modifier.height(4.dp))
                 Text(tip.exampleCaption ?: tip.summary, style = MaterialTheme.typography.bodySmall, color = c.muted, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
+        }
+    }
+}
+
+@Composable
+private fun UpdateCard(state: UpdateState, onUpdate: () -> Unit, onLater: () -> Unit, modifier: Modifier = Modifier) {
+    val c = LocalAppColors.current
+    AppCard(modifier.fillMaxWidth()) {
+        when (state) {
+            is UpdateState.Available -> {
+                Text("새 버전 ${Ko.iGa("v${state.release.version}")} 있어요", style = MaterialTheme.typography.titleMedium)
+                val size = "%.1f MB".format(state.release.sizeBytes / 1048576.0)
+                Text(listOfNotNull(size, state.release.note).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = c.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryButton("업데이트", onUpdate, Modifier.weight(1f))
+                    TextButton(onLater, Modifier.padding(start = 8.dp)) { Text("나중에") }
+                }
+            }
+            is UpdateState.Downloading -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("새 버전을 받고 있어요", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    Text("${(state.progress * 100).toInt()}%", style = MaterialTheme.typography.titleMedium.tabular(), color = c.muted)
+                }
+                Spacer(Modifier.height(12.dp))
+                LinearProgressIndicator({ state.progress }, Modifier.fillMaxWidth(), color = c.primary, trackColor = c.soft)
+            }
+            UpdateState.Installing -> Text("설치 화면으로 넘어가요", style = MaterialTheme.typography.titleMedium)
+            is UpdateState.Failed -> {
+                Text(state.message, style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.padding(top = 4.dp)) {
+                    TextButton(onUpdate) { Text("다시 시도") }
+                    TextButton(onLater, Modifier.padding(start = 8.dp)) { Text("나중에") }
+                }
+            }
+            UpdateState.Idle -> {}
         }
     }
 }

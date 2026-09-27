@@ -11,16 +11,31 @@ android {
         applicationId = "com.seobuk.chess"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    // Release key: keystore/chess.jks + keystore/PASSWORD.txt (both git-ignored, see keystore/README.txt).
+    // Without them the release build is signed with the debug key and must not be distributed: the in-app
+    // updater can only install an APK signed with the same key as the one already installed.
+    val keystore = rootProject.file("keystore/chess.jks")
+    val passwordFile = rootProject.file("keystore/PASSWORD.txt")
+    if (keystore.exists() && passwordFile.exists()) {
+        signingConfigs.create("release") {
+            storeFile = keystore
+            storePassword = passwordFile.readText().trim()
+            keyAlias = "chess"
+            keyPassword = storePassword
+        }
+    } else {
+        println("⚠ release keystore not found: signing with debug key, do not distribute")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // ponytail: debug key for sideload APK; add real keystore before Play Store
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
