@@ -67,6 +67,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.seobuk.chess.core.GameStatus
 import com.seobuk.chess.core.Piece
 import com.seobuk.chess.core.PieceType
@@ -86,6 +89,7 @@ import com.seobuk.chess.ui.components.PromotionPicker
 import com.seobuk.chess.ui.components.ThinkingDots
 import com.seobuk.chess.ui.components.color
 import com.seobuk.chess.ui.components.pressScale
+import com.seobuk.chess.ui.sound.LocalSfx
 import com.seobuk.chess.ui.theme.LocalAppColors
 import com.seobuk.chess.ui.theme.LocalReducedMotion
 import com.seobuk.chess.ui.theme.Tones
@@ -121,6 +125,9 @@ fun GameScreen(
         if (plies > lastPlies) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
         lastPlies = plies
     }
+    val sfx = LocalSfx.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(sfx, lifecycle) { lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.sounds.collect(sfx::play) } }
     BackHandler(enabled = active && u.inProgress) { confirm = Confirm.LEAVE }
     BackHandler(enabled = active && u.promotion != null) { vm.onPromotion(null) }
 

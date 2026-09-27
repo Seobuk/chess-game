@@ -43,6 +43,21 @@ class ProgressStore(context: Context) {
         get() = rev.intValue.let { themeIdOf(prefs.getString(THEME, null)) }
         set(value) = write { putString(THEME, value) }
 
+    var soundEnabled: Boolean
+        get() = rev.intValue.let { prefs.getBoolean(SOUND, true) }
+        set(value) = write { putBoolean(SOUND, value) }
+
+    /** When the last update check started (epoch ms). No [rev] bump: nothing on screen reads it. */
+    var updateCheckedAt: Long
+        get() = prefs.getLong(UPD_AT, 0)
+        set(value) = prefs.edit().putLong(UPD_AT, value).apply()
+
+    /** "나중에": hides [version] for a day ([Updates.snoozed]). */
+    fun snoozeUpdate(version: String) = prefs.edit().putString(UPD_SNOOZE, version).putLong(UPD_SNOOZE_AT, System.currentTimeMillis()).apply()
+
+    fun updateSnoozed(version: String): Boolean =
+        Updates.snoozed(version, prefs.getString(UPD_SNOOZE, null), prefs.getLong(UPD_SNOOZE_AT, 0), System.currentTimeMillis())
+
     fun recommendedLevel(): AiLevel = rating.let { r -> AiLevels.all.minBy { abs(it.approxElo - r) } }
 
     fun addHint() = write { putInt(HINTS, prefs.getInt(HINTS, 0) + 1) }
@@ -74,6 +89,10 @@ class ProgressStore(context: Context) {
         private const val HISTORY_KEY = "history"
         private const val HINTS = "hints"
         private const val THEME = "theme"
+        private const val SOUND = "sound"
+        private const val UPD_AT = "upd_at"
+        private const val UPD_SNOOZE = "upd_snooze"
+        private const val UPD_SNOOZE_AT = "upd_snooze_at"
 
         private val OLD_BOARD_THEMES = mapOf("wood" to "walnut", "emerald" to "forest", "midnight" to "slate")
 

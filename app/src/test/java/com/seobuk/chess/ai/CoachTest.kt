@@ -145,5 +145,7 @@ class CoachTest {
         assertEquals("Ra8#로", Ko.ro("Ra8#"))
         assertEquals("퀸과", Ko.wa("퀸"))
         assertEquals("비숍이", Ko.iGa("비숍"))
+        assertEquals("v0.2.0이", Ko.iGa("v0.2.0")) // the update card: 영 takes 이
+        assertEquals("v1.0.2가", Ko.iGa("v1.0.2"))
     }
 }

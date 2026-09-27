@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -24,7 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -48,10 +52,14 @@ import com.seobuk.chess.ui.screens.StatsScreen
 import com.seobuk.chess.ui.screens.StatsUi
 import com.seobuk.chess.ui.screens.StrategyDetailScreen
 import com.seobuk.chess.ui.screens.StrategyScreen
+import com.seobuk.chess.ui.sound.LocalSfx
+import com.seobuk.chess.ui.sound.Sfx
 import com.seobuk.chess.ui.theme.AppThemes
 import com.seobuk.chess.ui.theme.ChessTheme
 import com.seobuk.chess.ui.theme.LocalAppColors
 import com.seobuk.chess.ui.theme.LocalReducedMotion
+import com.seobuk.chess.ui.update.UpdateCheck
+import com.seobuk.chess.ui.update.Updater
 import java.io.Serializable
 import java.time.LocalDate
 
@@ -82,6 +90,8 @@ class Entry(val id: Int, val screen: Screen) : Serializable
  */
 class AppViewModel(app: Application, saved: SavedStateHandle) : AndroidViewModel(app) {
     val store = ProgressStore(app)
+    val sfx = Sfx(app, store)
+    val updater = Updater(app, store, viewModelScope)
 
     @Suppress("DEPRECATION", "UNCHECKED_CAST")
     val stack = mutableStateListOf<Entry>().apply {
@@ -120,7 +130,10 @@ class AppViewModel(app: Application, saved: SavedStateHandle) : AndroidViewModel
         return e.id
     }
 
-    override fun onCleared() = stores.values.forEach { it.clear() }
+    override fun onCleared() {
+        stores.values.forEach { it.clear() }
+        sfx.release()
+    }
 
     private companion object {
         const val NAV = "nav"
@@ -139,93 +152,108 @@ fun ChessApp() {
     fun popTo(match: (Entry) -> Boolean) = app.popTo(match).forEach(holder::removeState)
     val back: () -> Unit = { val below = app.stack.getOrNull(app.stack.size - 2); popTo { it === below } }
     BackHandler(enabled = app.stack.size > 1, onBack = back)
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { app.updater.onResume() } // app start counts as one check
 
-    ChessTheme(store.themeId) {
-        val reduced = LocalReducedMotion.current
-        val slide = with(LocalDensity.current) { 16.dp.roundToPx() }
-        Box(Modifier.fillMaxSize().background(LocalAppColors.current.bg)) {
-            AnimatedContent(
-                targetState = app.stack.last(),
-                transitionSpec = {
-                    val dir = if (targetState.id > initialState.id) 1 else -1
-                    if (reduced) EnterTransition.None togetherWith ExitTransition.None
-                    else (slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { dir * slide } + fadeIn(tween(220)))
-                        .togetherWith(slideOutHorizontally(tween(220, easing = FastOutSlowInEasing)) { -dir * slide } + fadeOut(tween(150)))
-                },
-                contentKey = { it.id },
-                label = "nav",
-            ) { entry ->
-                holder.SaveableStateProvider(entry.id) {
-                    // Only the top entry may navigate: taps on a screen that is animating out are ignored.
-                    val isTop = { app.stack.last() === entry }
-                    val onBack = { if (isTop()) back() }
-                    val go = { screen: Screen -> if (isTop()) app.push(screen) }
-                    when (val s = entry.screen) {
-                        Screen.Home -> {
-                            val tip = remember { dailyTip() }
-                            HomeScreen(
-                                rating = store.rating,
-                                recommendedLevel = store.recommendedLevel(),
-                                tip = tip,
-                                onPlay = { go(Screen.LevelSelect()) },
-                                onTip = { go(Screen.StrategyDetail(tip.id)) },
-                                onOpenings = { go(Screen.Openings) },
-                                onStrategy = { go(Screen.Strategy) },
-                                onStats = { go(Screen.Stats) },
-                            )
-                        }
-                        is Screen.LevelSelect -> {
-                            val practice = s.practiceOpeningId?.let(OpeningBook::byId)
-                            LevelSelectScreen(
-                                levels = AiLevels.all,
-                                records = store.levelRecords,
-                                recommendedLevel = store.recommendedLevel().level,
-                                onStart = { level, side -> go(Screen.Game(level, side, practice?.steps?.map { it.uci }.orEmpty())) },
-                                onBack = onBack,
-                                subtitle = practice?.let { "${it.nameKo} 수순부터 이어서 연습해요" },
-                            )
-                        }
-                        is Screen.Game -> {
-                            val vm = remember(entry.id) {
-                                val owner = object : ViewModelStoreOwner { override val viewModelStore = app.storeFor(entry.id) }
-                                val factory = viewModelFactory {
-                                    initializer { GameViewModel(AiLevels.get(s.level), s.side, s.startMovesUci, store, s.resumeUci) }
-                                }
-                                ViewModelProvider.create(owner, factory)[GameViewModel::class].also { app.games[entry.id] = it }
+    CompositionLocalProvider(LocalSfx provides app.sfx) {
+        ChessTheme(store.themeId) {
+            val reduced = LocalReducedMotion.current
+            val slide = with(LocalDensity.current) { 16.dp.roundToPx() }
+            Box(Modifier.fillMaxSize().background(LocalAppColors.current.bg)) {
+                AnimatedContent(
+                    targetState = app.stack.last(),
+                    transitionSpec = {
+                        val dir = if (targetState.id > initialState.id) 1 else -1
+                        if (reduced) EnterTransition.None togetherWith ExitTransition.None
+                        else (slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { dir * slide } + fadeIn(tween(220)))
+                            .togetherWith(slideOutHorizontally(tween(220, easing = FastOutSlowInEasing)) { -dir * slide } + fadeOut(tween(150)))
+                    },
+                    contentKey = { it.id },
+                    label = "nav",
+                ) { entry ->
+                    holder.SaveableStateProvider(entry.id) {
+                        // Only the top entry may navigate: taps on a screen that is animating out are ignored.
+                        val isTop = { app.stack.last() === entry }
+                        val onBack = { if (isTop()) back() }
+                        val go = { screen: Screen -> if (isTop()) app.push(screen) }
+                        when (val s = entry.screen) {
+                            Screen.Home -> {
+                                val tip = remember { dailyTip() }
+                                HomeScreen(
+                                    rating = store.rating,
+                                    recommendedLevel = store.recommendedLevel(),
+                                    tip = tip,
+                                    onPlay = { go(Screen.LevelSelect()) },
+                                    onTip = { go(Screen.StrategyDetail(tip.id)) },
+                                    onOpenings = { go(Screen.Openings) },
+                                    onStrategy = { go(Screen.Strategy) },
+                                    onStats = { go(Screen.Stats) },
+                                    update = app.updater.state,
+                                    onUpdate = app.updater::install,
+                                    onUpdateLater = app.updater::snooze,
+                                )
                             }
-                            GameScreen(
-                                vm, store.rating,
-                                active = isTop(),
-                                onLeave = onBack,
-                                onLevels = {
-                                    if (isTop()) {
-                                        popTo { it.screen is Screen.LevelSelect }
-                                        if (app.stack.last().screen !is Screen.LevelSelect) app.push(Screen.LevelSelect())
+                            is Screen.LevelSelect -> {
+                                val practice = s.practiceOpeningId?.let(OpeningBook::byId)
+                                LevelSelectScreen(
+                                    levels = AiLevels.all,
+                                    records = store.levelRecords,
+                                    recommendedLevel = store.recommendedLevel().level,
+                                    onStart = { level, side -> go(Screen.Game(level, side, practice?.steps?.map { it.uci }.orEmpty())) },
+                                    onBack = onBack,
+                                    subtitle = practice?.let { "${it.nameKo} 수순부터 이어서 연습해요" },
+                                )
+                            }
+                            is Screen.Game -> {
+                                val vm = remember(entry.id) {
+                                    val owner = object : ViewModelStoreOwner { override val viewModelStore = app.storeFor(entry.id) }
+                                    val factory = viewModelFactory {
+                                        initializer { GameViewModel(AiLevels.get(s.level), s.side, s.startMovesUci, store, s.resumeUci) }
+                                    }
+                                    ViewModelProvider.create(owner, factory)[GameViewModel::class].also { app.games[entry.id] = it }
+                                }
+                                GameScreen(
+                                    vm, store.rating,
+                                    active = isTop(),
+                                    onLeave = onBack,
+                                    onLevels = {
+                                        if (isTop()) {
+                                            popTo { it.screen is Screen.LevelSelect }
+                                            if (app.stack.last().screen !is Screen.LevelSelect) app.push(Screen.LevelSelect())
+                                        }
+                                    },
+                                    onHome = { if (isTop()) popTo { it.screen == Screen.Home } },
+                                )
+                            }
+                            Screen.Openings -> OpeningsScreen(OpeningBook.all, onOpen = { go(Screen.OpeningDetail(it)) }, onBack = onBack)
+                            is Screen.OpeningDetail -> OpeningBook.byId(s.id)?.let {
+                                OpeningDetailScreen(it, onPractice = { o -> go(Screen.LevelSelect(o.id)) }, onBack = onBack)
+                            }
+                            Screen.Strategy -> StrategyScreen(StrategyGuide.topics, onOpen = { go(Screen.StrategyDetail(it)) }, onBack = onBack)
+                            is Screen.StrategyDetail -> StrategyGuide.byId(s.id)?.let { StrategyDetailScreen(it, onBack = onBack) }
+                            Screen.Stats -> StatsScreen(
+                                StatsUi(
+                                    rating = store.rating,
+                                    ratingHistory = store.ratingHistory,
+                                    levelRecords = store.levelRecords,
+                                    qualityTotals = store.qualityTotals,
+                                    hintsUsed = store.hintsUsed,
+                                    recommendedLevel = store.recommendedLevel(),
+                                ),
+                                AppThemes.all,
+                                selectedThemeId = store.themeId,
+                                onSelectTheme = { store.themeId = it },
+                                soundEnabled = store.soundEnabled,
+                                onSoundEnabled = { store.soundEnabled = it },
+                                versionName = app.updater.versionName,
+                                onCheckUpdate = {
+                                    app.updater.check(force = true).also { result ->
+                                        // The Home card shows the update; go there unless the user has already moved on.
+                                        if (result == UpdateCheck.HAS_UPDATE && isTop()) popTo { it.screen == Screen.Home }
                                     }
                                 },
-                                onHome = { if (isTop()) popTo { it.screen == Screen.Home } },
+                                onBack = onBack,
                             )
                         }
-                        Screen.Openings -> OpeningsScreen(OpeningBook.all, onOpen = { go(Screen.OpeningDetail(it)) }, onBack = onBack)
-                        is Screen.OpeningDetail -> OpeningBook.byId(s.id)?.let {
-                            OpeningDetailScreen(it, onPractice = { o -> go(Screen.LevelSelect(o.id)) }, onBack = onBack)
-                        }
-                        Screen.Strategy -> StrategyScreen(StrategyGuide.topics, onOpen = { go(Screen.StrategyDetail(it)) }, onBack = onBack)
-                        is Screen.StrategyDetail -> StrategyGuide.byId(s.id)?.let { StrategyDetailScreen(it, onBack = onBack) }
-                        Screen.Stats -> StatsScreen(
-                            StatsUi(
-                                rating = store.rating,
-                                ratingHistory = store.ratingHistory,
-                                levelRecords = store.levelRecords,
-                                qualityTotals = store.qualityTotals,
-                                hintsUsed = store.hintsUsed,
-                                recommendedLevel = store.recommendedLevel(),
-                            ),
-                            AppThemes.all,
-                            selectedThemeId = store.themeId,
-                            onSelectTheme = { store.themeId = it },
-                            onBack = onBack,
-                        )
                     }
                 }
             }

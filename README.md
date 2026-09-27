@@ -18,7 +18,13 @@ Kotlin + Jetpack Compose (Material 3), AGP 9.4, Gradle 9.8, minSdk 26.
 ./gradlew testDebugUnitTest assembleRelease
 ```
 
-APK: `app/build/outputs/apk/release/app-release.apk` (현재 디버그 키로 서명, 스토어 배포 전 정식 키 필요)
+APK: `app/build/outputs/apk/release/app-release.apk`
+
+서명: `keystore/chess.jks` + `keystore/PASSWORD.txt`(git 제외)가 있으면 그 키로, 없으면 디버그 키로 서명하고 경고를 찍는다. 배포 APK는 반드시 정식 키로 서명해야 기존 설치 위에 업데이트된다. 키는 백업해 둘 것.
+
+## Update
+
+앱이 GitHub Releases 최신 버전(`releases/latest`)을 30분에 한 번 확인하고, 새 버전이 있으면 홈에서 받아 설치한다. 릴리스는 prerelease가 아닌 정식 릴리스로 올리고 `.apk`를 첨부한다.
 
 ## License
 
