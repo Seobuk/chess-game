@@ -61,6 +61,14 @@ data class AppPalette(
 ) {
     /** Colour of the soft float shadow: a neutral tinted toward the theme, never coloured. */
     val shadow: Color get() = if (dark) Color(0xFF050706) else text
+
+    // Go board: one flat wood tone per mode, the same in every theme (dimmer at night so it doesn't glare).
+    /** The wood. Stones carry their own 1dp edge (>= 3:1 on it), so white stones read on the light tone too. */
+    val goBoard: Color get() = if (dark) Color(0xFFB8955F) else Color(0xFFE2BF80)
+    /** Grid lines, >= 3:1 on [goBoard]. */
+    val goLine: Color get() = if (dark) Color(0xFF4A3A22) else Color(0xFF6B5433)
+    /** Star points, coordinates, labels and marks on empty points, >= 4.5:1 on [goBoard]. */
+    val goStar: Color get() = if (dark) Color(0xFF2E2414) else Color(0xFF3F3018)
 }
 
 @Immutable
