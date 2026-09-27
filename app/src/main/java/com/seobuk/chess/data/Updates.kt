@@ -10,7 +10,6 @@ data class Release(val version: String, val sizeBytes: Long, val note: String?, 
 object Updates {
     const val LATEST_URL = "https://api.github.com/repos/Seobuk/chess-game/releases/latest"
     const val DOWNLOAD_PREFIX = "https://github.com/Seobuk/chess-game/releases/download/"
-    val REDIRECT_PREFIXES = listOf("https://objects.githubusercontent.com/", "https://github.com/")
     const val CHECK_INTERVAL_MS = 30 * 60 * 1000L
     const val SNOOZE_MS = 24 * 60 * 60 * 1000L
 
@@ -33,6 +32,16 @@ object Updates {
     /** The first .apk asset served from an allowed [prefixes] location; anything else is ignored. */
     fun pickAsset(assets: List<Asset>, prefixes: List<String> = listOf(DOWNLOAD_PREFIX)): Asset? =
         assets.firstOrNull { a -> a.name.endsWith(".apk") && prefixes.any(a.url::startsWith) }
+
+    /**
+     * A download redirect may only land on GitHub itself or its asset CDN (any *.githubusercontent.com host: the
+     * exact host has changed before, e.g. objects -> release-assets), and only over https.
+     */
+    fun redirectAllowed(url: String): Boolean {
+        val u = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        val host = u.host?.lowercase() ?: return false
+        return u.scheme == "https" && (host == "github.com" || host.endsWith(".githubusercontent.com"))
+    }
 
     /** One check per [CHECK_INTERVAL_MS]; a clock set back (negative elapsed) does not block checks. */
     fun throttled(checkedAt: Long, now: Long): Boolean = now - checkedAt in 0 until CHECK_INTERVAL_MS

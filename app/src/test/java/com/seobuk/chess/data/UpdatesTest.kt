@@ -34,6 +34,19 @@ class UpdatesTest {
     }
 
     @Test
+    fun redirectAllowlist() {
+        // GitHub moved its asset CDN from objects to release-assets; any *.githubusercontent.com host is fine.
+        assertTrue(Updates.redirectAllowed("https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sig=x"))
+        assertTrue(Updates.redirectAllowed("https://objects.githubusercontent.com/a"))
+        assertTrue(Updates.redirectAllowed("https://github.com/Seobuk/chess-game/releases/download/v1/a.apk"))
+        assertFalse(Updates.redirectAllowed("http://release-assets.githubusercontent.com/a")) // https only
+        assertFalse(Updates.redirectAllowed("https://githubusercontent.com.evil.com/a"))
+        assertFalse(Updates.redirectAllowed("https://github.com@evil.com/a")) // userinfo trick: host is evil.com
+        assertFalse(Updates.redirectAllowed("https://evilgithub.com/a"))
+        assertFalse(Updates.redirectAllowed("not a url"))
+    }
+
+    @Test
     fun throttle() {
         val at = 10_000_000L // later than one interval after epoch 0
         assertTrue(Updates.throttled(at, at))

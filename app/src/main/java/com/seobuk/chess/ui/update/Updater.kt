@@ -68,7 +68,7 @@ class Updater(private val app: Application, private val store: ProgressStore, pr
     private var sessionId = -1
 
     private val downloadPrefixes get() = listOf(Updates.DOWNLOAD_PREFIX) + listOfNotNull(EMULATOR_HOST.takeIf { debugUrl != null })
-    private val redirectPrefixes get() = Updates.REDIRECT_PREFIXES + listOfNotNull(EMULATOR_HOST.takeIf { debugUrl != null })
+    private fun redirectAllowed(url: String) = Updates.redirectAllowed(url) || (debugUrl != null && url.startsWith(EMULATOR_HOST))
 
     /** Each resume: finish an install that waited for the unknown-sources permission, then a throttled check. */
     fun onResume() {
@@ -216,7 +216,7 @@ class Updater(private val app: Application, private val store: ProgressStore, pr
                     val code = c.responseCode
                     if (code in REDIRECTS) {
                         next = URL(URL(next), c.getHeaderField("Location") ?: throw IOException("redirect without Location")).toString()
-                        if (redirectPrefixes.none(next::startsWith)) throw IOException("redirect outside allowlist: $next")
+                        if (!redirectAllowed(next)) throw IOException("redirect outside allowlist: $next")
                         return@repeat
                     }
                     if (code != 200) throw IOException("HTTP $code")
